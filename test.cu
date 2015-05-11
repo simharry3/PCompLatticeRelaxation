@@ -16,7 +16,7 @@
 //    management.
 //
 //////////////////////////////////////////////////////////////////////////////////
-
+#include <time.h>
 #include <iostream>
 //===========
 //GLOBALS:
@@ -25,7 +25,7 @@
 //--------------
 // VARIABLES
 //--------------
-const int U = 10; //Number of blocks per unit. This allows the grid spacing to be user defined.
+const int U = 200; //Number of blocks per unit. This allows the grid spacing to be user defined.
 const int H = 11*U; //Height of the outer box
 const int W = 12*U; //Width of the outer box
 const int h = 3*U; //Height of the inner box
@@ -36,6 +36,8 @@ const int N = H*W; //Number of threads required
 //--------------
 // FUNCTIONS
 //--------------
+
+//CUDA FUNCTIONS:
 
 //Form the base simulation area:
 __global__ void fill(double *a){
@@ -63,6 +65,32 @@ __global__ void average(double *a, double *b){
   }
 }
 
+//SERIAL FUNCTIONS:
+void fillSerial(double *a){
+    for(int i = 0; i < N; ++i){
+        if(i < W || i > (N-W) || i%W == 0 || (i - (W-1))%W == 0){
+            a[i] = 9;
+        }
+        else{
+            a[i] = 4.5;
+        }
+        if( i > W*((H-h)/2) && i < W*((H-h)/2+h) && i % W+1 > (W-w)/2 && i % W < (W-w)/2+w){
+            a[i] = 0;
+        }
+    }
+}
+
+
+void averageSerial(double* a, double* b){
+    for(int i = 0; i < N; ++i){
+        if(a[i] == 0 || a[i] == 9){
+            b[i] = a[i];
+        }
+        else{
+            b[i] = (a[i]+a[i+1]+a[i-1]+a[i+W]+a[i-W])/5.0;
+        }
+    }
+}
 
 
 //-----------------
@@ -70,7 +98,7 @@ __global__ void average(double *a, double *b){
 //-----------------
 
 //Quick function to print out the grid:
-void print(double *a){
+void print(double* a){
   for(int i = 0; i < N; ++i){
     if(i%W == 0){
       std::cout << '\n';
@@ -81,17 +109,34 @@ void print(double *a){
 
 
 int main(void){
+  //Serial Code:
+    clock_t tS;
+    clock_t tP;
+    tS = clock();
+    double* notPlate_s = new double[N]; //Serial copy of the non-plate locations
+    double* tempVal_s = new double[N]; //Double array to hold temporary values
+    for(int i = 0; i < 1000; ++i){
+        fillSerial(notPlate_s);
+        averageSerial(notPlate_s, tempVal_s);
+        notPlate_s = tempVal_s;
+    }
+    tS = clock() - tS;
+
+
+    tP = clock();
+  //PARALLEL CODE:
+
   double *notPlate_h; //Host copy of the non-plate locations
   double *notPlate_d; //Device copy of the non-plate locations
   int size = N * sizeof(double);
-
+  
   //The first thing we need to do is fill the initial experiment vector:
   cudaMalloc((void **)&notPlate_d, size); //Allocate memory on device for the not-plate vector
   notPlate_h = (double *)malloc(size); //Allocate memory on the host for the not-plate vector
   cudaMemcpy(notPlate_d, notPlate_h, size, cudaMemcpyHostToDevice);
   fill<<<N,1>>>(notPlate_d);
   cudaMemcpy(notPlate_h, notPlate_d, size, cudaMemcpyDeviceToHost);
-  std::cout << '\n';
+
 
   //Now we need to create a secondary vector to hold our rolling values while the GPU works:
   double *tempVal_h;
@@ -112,7 +157,7 @@ int main(void){
   //print(notPlate_h);
 
   //When uncommented, this prints to the std output what the values at the user input points are:  
-  while(true){
+ /* while(true){
     std::cout << "\nPlease enter an X coordinate: ";
     double x; 
     std::cin >> x;
@@ -122,9 +167,11 @@ int main(void){
     std::cin >> y;
     y = y*U;
     std::cout << "The point (" << x/U << "," << y/U << ") has value: " << notPlate_h[(int)(y*W+x)] << " Statvolts\n";
-  }
+  }*/
   //Free the memory just to be safe:
   free(notPlate_h);
   cudaFree(notPlate_d);
+  tP = clock() - tP;
+  std::cout << "N: " << N << " | SERIAL: " << (float)tS/CLOCKS_PER_SEC << "s | PARALLEL: " << (float)tP/CLOCKS_PER_SEC << "s" << std::endl;
   return 0;
 }
