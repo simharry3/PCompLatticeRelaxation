@@ -18,6 +18,11 @@
 //////////////////////////////////////////////////////////////////////////////////
 #include <time.h>
 #include <iostream>
+#include <thrust/host_vector.h>
+#include <thrust/device_vector.h>
+#include <thrust/generate.h>
+#include <thrust/copy.h>
+#include <thrust/transform.h>
 //===========
 //GLOBALS:
 //===========
@@ -112,6 +117,7 @@ int main(void){
   //Serial Code:
     clock_t tS;
     clock_t tP;
+    clock_t tT;
     tS = clock();
     double* notPlate_s = new double[N]; //Serial copy of the non-plate locations
     double* tempVal_s = new double[N]; //Double array to hold temporary values
@@ -172,6 +178,26 @@ int main(void){
   free(notPlate_h);
   cudaFree(notPlate_d);
   tP = clock() - tP;
-  std::cout << "N: " << N << " | SERIAL: " << (float)tS/CLOCKS_PER_SEC << "s | PARALLEL: " << (float)tP/CLOCKS_PER_SEC << "s" << std::endl;
+
+  tT = clock();
+
+  //THRUST CODE
+  thrust::device_vector<double> notPlate_dT(N);
+  thrust::host_vector<double> notPlate_hT(N);
+  thrust::generate(notPlate_dT.begin(), notPlate_dT.end(),nfill());
+  thrust::copy(notPlate_dT.begin(), notPlate_dR.end(), notPlate_hT.begin());
+
+  thrust::host_vector<double> tempVal_hT(N);
+  thrust::device_vector<double> tempVal_dT(N);
+
+  for(int i = 0; i < 1000; ++i) {
+    thrust::copy(notPlate_dT.begin(), notPlate_dT.end(), notPlate_hT.begin());
+    thrust::transform(notPlate_dTbegin(), notPlate_dT.end(), tempVal_dT.begin(), tempVal_dT.begin(), average());
+    thrust::copy(notPlate_hT.begin(), notPlate_hT.end(), notPlate_dT.begin());
+    notPlate_hT = tempVal_hT;
+  }
+
+  tT = clock() - tT;
+  std::cout << "N: " << N << " | SERIAL: " << (float)tS/CLOCKS_PER_SEC << "s | PARALLEL: " << (float)tP/CLOCKS_PER_SEC << "s | THRUST: " << (float)tT/CLOCKS_PER_SEC << "s" << std::endl;
   return 0;
 }
