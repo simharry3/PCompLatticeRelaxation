@@ -118,6 +118,7 @@ int main(void){
     clock_t tS;
     clock_t tP;
     clock_t tT;
+    clock_t tO;
     tS = clock();
     double* notPlate_s = new double[N]; //Serial copy of the non-plate locations
     double* tempVal_s = new double[N]; //Double array to hold temporary values
@@ -179,12 +180,28 @@ int main(void){
   cudaFree(notPlate_d);
   tP = clock() - tP;
 
+  tO = clock();
+
+  //OPENMP CODE
+  #pragma omp parallel
+  {
+  double* notPlate_s = new double[N]; //Serial copy of the non-plate locations
+  double* tempVal_s = new double[N]; //Double array to hold temporary values
+  #pragma omp for
+  for(int i = 0; i < 1000; ++i){
+      fillSerial(notPlate_s);
+      averageSerial(notPlate_s, tempVal_s);
+      notPlate_s = tempVal_s;
+  }
+  }
+  tO = clock() - tO;
+
   tT = clock();
 
   //THRUST CODE
   thrust::device_vector<double> notPlate_dT(N);
   thrust::host_vector<double> notPlate_hT(N);
-  thrust::generate(notPlate_dT.begin(), notPlate_dT.end(),nfill());
+  thrust::generate(notPlate_dT.begin(), notPlate_dT.end(),fillSerial());
   thrust::copy(notPlate_dT.begin(), notPlate_dR.end(), notPlate_hT.begin());
 
   thrust::host_vector<double> tempVal_hT(N);
@@ -192,12 +209,13 @@ int main(void){
 
   for(int i = 0; i < 1000; ++i) {
     thrust::copy(notPlate_dT.begin(), notPlate_dT.end(), notPlate_hT.begin());
-    thrust::transform(notPlate_dTbegin(), notPlate_dT.end(), tempVal_dT.begin(), tempVal_dT.begin(), average());
+    thrust::transform(notPlate_dTbegin(), notPlate_dT.end(), tempVal_dT.begin(), tempVal_dT.begin(), averageSerial());
     thrust::copy(notPlate_hT.begin(), notPlate_hT.end(), notPlate_dT.begin());
     notPlate_hT = tempVal_hT;
   }
 
   tT = clock() - tT;
-  std::cout << "N: " << N << " | SERIAL: " << (float)tS/CLOCKS_PER_SEC << "s | PARALLEL: " << (float)tP/CLOCKS_PER_SEC << "s | THRUST: " << (float)tT/CLOCKS_PER_SEC << "s" << std::endl;
+  std::cout << "N: " << N << " | SERIAL: " << (float)tS/CLOCKS_PER_SEC << "s | PARALLEL: " << (float)tP/CLOCKS_PER_SEC << "s | OPENMP: " << (float)tO/CLOCKS_PER_SEC << ""s | THRUST: ";
+  std::cout << (float)tT/CLOCKS_PER_SEC << "s" << std::endl;
   return 0;
 }
